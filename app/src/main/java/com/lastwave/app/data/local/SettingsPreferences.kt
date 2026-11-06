@@ -206,7 +206,7 @@ data class MiscSettings(
     /** When false, podcast shelves, screens and episode search stay hidden.
      *  Existing progress is preserved so re-enabling resumes where you left off. */
     val podcastsEnabled: Boolean = true,
-    /** When true (default), removing LastWave from Recents stops playback and
+    /** When true (default), removing SoundDrop from Recents stops playback and
      *  tears down the playback service. When false, playback keeps running in
      *  the background after the task is removed. */
     val stopPlaybackOnTaskRemoved: Boolean = true,

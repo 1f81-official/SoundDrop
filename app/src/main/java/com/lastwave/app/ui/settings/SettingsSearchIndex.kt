@@ -226,7 +226,7 @@ object SettingsSearchIndex {
                 SettingsEntry(
                     id = "audio.stop_on_recents",
                     title = "Stop Playback When Swiped Away",
-                    subtitle = "Stop music when LastWave is removed from Recents",
+                    subtitle = "Stop music when SoundDrop is removed from Recents",
                     keywords = listOf(
                         "recents", "swipe", "swipe away", "stop playback", "background playback",
                         "continue playing", "task removed", "kill app", "close app"
@@ -485,7 +485,7 @@ object SettingsSearchIndex {
                     title = "SoundDrop Signature Theme",
                     subtitle = "Bespoke logo palette with Electric Lime and Obsidian Teal",
                     keywords = listOf(
-                        "lastwave theme", "brand theme", "special theme", "logo theme", "lime",
+                        "sounddrop theme", "brand theme", "special theme", "logo theme", "lime",
                         "teal", "obsidian", "electric lime", "iconic theme", "brand colors"
                     ),
                     icon = Icons.Filled.AutoAwesome,
@@ -1246,8 +1246,8 @@ object SettingsSearchIndex {
                     title = "Import from Spotify / Apple Music",
                     subtitle = "Paste a public playlist URL from Spotify or Apple Music to transfer tracks",
                     keywords = listOf(
-                        "import spotify", "import apple music", "transfer playlist", "spotify to lastwave",
-                        "apple to lastwave", "playlist converter", "public link"
+                        "import spotify", "import apple music", "transfer playlist", "spotify to sounddrop",
+                        "apple to sounddrop", "playlist converter", "public link"
                     ),
                     icon = Icons.Filled.QueueMusic,
                     iconContainer = { MaterialTheme.colorScheme.secondaryContainer },
@@ -1370,9 +1370,9 @@ object SettingsSearchIndex {
                 SettingsEntry(
                     id = "about.telegram_support",
                     title = "Telegram Updates & Support",
-                    subtitle = "Join @clashprojects on Telegram for app news, beta builds, and support",
+                    subtitle = "Join @xaero_community on Telegram for app news, beta builds, and support",
                     keywords = listOf(
-                        "telegram", "support", "community", "chat", "clashprojects", "help",
+                        "telegram", "support", "community", "chat", "xaero community", "help",
                         "updates channel", "news"
                     ),
                     icon = Icons.AutoMirrored.Filled.Send,
@@ -1402,10 +1402,10 @@ object SettingsSearchIndex {
             add(
                 SettingsEntry(
                     id = "about.more_apps",
-                    title = "More Apps from Clash Projects",
-                    subtitle = "Join @MaterialYouApp on Telegram to discover other applications",
+                    title = "More Apps from Xaero Community",
+                    subtitle = "Join @xaero_community on Telegram to discover other applications",
                     keywords = listOf(
-                        "more apps", "material you app", "other apps", "clash projects", "developer"
+                        "more apps", "1f81", "other apps", "xaero community", "developer"
                     ),
                     icon = Icons.Filled.AutoAwesome,
                     iconContainer = { MaterialTheme.colorScheme.primaryContainer },
@@ -1470,9 +1470,9 @@ object SettingsSearchIndex {
                 SettingsEntry(
                     id = "about.desktop_app",
                     title = "Download Desktop App",
-                    subtitle = "View repository at github.com/official-1f81/SoundDrop-Desktop",
+                    subtitle = "Visit sounddrop.framer.website/desktop",
                     keywords = listOf(
-                        "desktop", "pc", "windows", "mac", "linux", "electron", "github", "clash-projects",
+                        "desktop", "pc", "windows", "mac", "linux", "electron", "github", "xaero community",
                         "download"
                     ),
                     icon = Icons.Filled.Download,

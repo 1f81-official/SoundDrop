@@ -500,7 +500,7 @@ class SettingsViewModel @Inject constructor(
     // ── Appearance (§8.2 / §8.3 / §8.4) ──
 
     fun setThemeMode(mode: ThemeMode) = launchSettingsAction("update theme mode") { themeRepository.setThemeMode(mode) }
-    fun setLastWaveTheme(enabled: Boolean) = launchSettingsAction("update LastWave signature theme") { themeRepository.setLastWaveTheme(enabled) }
+    fun setLastWaveTheme(enabled: Boolean) = launchSettingsAction("update SoundDrop signature theme") { themeRepository.setLastWaveTheme(enabled) }
     fun setAppIcon(icon: AppIcon) = launchSettingsAction("update app icon") { themeRepository.setAppIcon(icon) }
     fun setAmoled(enabled: Boolean) = launchSettingsAction("update AMOLED mode") { themeRepository.setAmoled(enabled) }
     fun setLiquidGlass(enabled: Boolean) = launchSettingsAction("update Liquid Glass") { themeRepository.setLiquidGlass(enabled) }
@@ -988,7 +988,7 @@ class SettingsViewModel @Inject constructor(
 
     private suspend fun buildDiagnosticsReport(): String = withContext(Dispatchers.IO) {
         val sb = StringBuilder()
-        sb.appendLine("LastWave diagnostics")
+        sb.appendLine("SoundDrop diagnostics")
         sb.appendLine("time=${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())}")
         val versionName = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName

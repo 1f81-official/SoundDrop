@@ -25,7 +25,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * LastWave session around the decent-player usbdevfs driver (MIT).
+ * SoundDrop session around the decent-player usbdevfs driver (MIT).
  *
  * PCM goes to isochronous URBs. AudioFlinger never sees the stream.
  *
@@ -800,7 +800,7 @@ class ExclusiveUsbOutput @Inject constructor(
 
     /** Text for the signal-path "copy USB diagnostic" button. */
     fun diagnosticReport(): String = buildString {
-        append("LastWave USB diagnostic\n")
+        append("SoundDrop USB diagnostic\n")
         append("active=$active wanted=$wanted rate=$configuredRateHz clockMatched=$clockMatched ")
         append("hardwareVolume=$hardwareVolume forceSoftwareVolume=$forceSoftwareVolume\n")
         if (sessionSummary.isNotEmpty()) append(sessionSummary).append('\n')

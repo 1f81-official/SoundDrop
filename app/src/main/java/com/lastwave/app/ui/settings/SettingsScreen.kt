@@ -2352,7 +2352,7 @@ fun SettingsScreen(
                         iconContainer = MaterialTheme.colorScheme.secondaryContainer,
                         iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
                         title = stringResource(R.string.settings_desktop_app),
-                        subtitle = "xaero.framer.website/apps/SoundDrop-Desktop",
+                        subtitle = "sounddrop.framer.website/download",
                         onClick = {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://sounddrop.framer.website/download"))
                             if (!startActivitySafely(context, intent)) {
