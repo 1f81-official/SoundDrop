@@ -176,6 +176,8 @@ internal data class PersistedPlaybackSession(
     val speed: Float = 1f,
     val pitch: Float = 1f,
     val durationMs: Long = 0L,
+    /** Exact shuffle play order (queue indices), so a restart never reshuffles. */
+    val shuffleOrder: List<Int> = emptyList(),
 )
 
 @androidx.compose.runtime.Immutable
@@ -227,10 +229,32 @@ data class PlaybackChromeState(
     val isCrossfading: Boolean = false,
 )
 
-/** Copy without the fields the progress ticker rewrites every ~60ms. */
-internal fun MusicPlayerState.withoutProgress(): MusicPlayerState =
-    if (positionMs == 0L && bufferedPositionMs == 0L) this
-    else copy(positionMs = 0L, bufferedPositionMs = 0L)
+/**
+ * The only playback fields browse screens (Home, Statistics, Playlists,
+ * album/artist pages, search) read to mark the playing row. Unlike
+ * [PlaybackChromeState] it leaves out automix telemetry (blend progress is
+ * rewritten every few ms during a mix), buffering and queue size, so those
+ * no longer recompose every visible list while the user scrolls.
+ */
+@androidx.compose.runtime.Immutable
+data class ListPlaybackState(
+    val current: PlayableTrack? = null,
+    val sourceLabel: String = "LastWave",
+    val isPlaying: Boolean = false,
+    val shuffleEnabled: Boolean = false,
+)
+
+/**
+ * Copy without the fields the progress ticker rewrites every ~60ms. The
+ * sleep-timer countdown rides on the same ticker; it is floored to whole
+ * seconds (what every timer label shows) so an armed timer no longer
+ * recomposes the full player and lyrics 16 times a second.
+ */
+internal fun MusicPlayerState.withoutProgress(): MusicPlayerState {
+    val sleep = sleepTimerRemainingMs?.let { (it / 1000L) * 1000L }
+    return if (positionMs == 0L && bufferedPositionMs == 0L && sleep == sleepTimerRemainingMs) this
+    else copy(positionMs = 0L, bufferedPositionMs = 0L, sleepTimerRemainingMs = sleep)
+}
 
 // Keep fields owned elsewhere (automix, crossfade, jam, volume, cast) when
 // rebuilding the whole state. Use inside _state.update so they come from the
@@ -510,6 +534,8 @@ class MusicPlayer @Inject constructor(
     private var sleepTimerStep = 0
     @Volatile
     private var crossfadeEnabled = false
+    /** Settings -> Autoplay similar songs. Off: the queue ends where the user left it. */
+    @Volatile private var autoplaySimilarEnabled = true
     @Volatile
     private var crossfadeDurationMs = 5_000L
     /**
@@ -566,6 +592,18 @@ class MusicPlayer @Inject constructor(
         }
         .distinctUntilChanged()
         .stateIn(applicationScope, SharingStarted.Eagerly, PlaybackChromeState())
+    /** See [ListPlaybackState]: what list rows need, nothing that ticks. */
+    val listPlaybackState: StateFlow<ListPlaybackState> = chromeState
+        .map {
+            ListPlaybackState(
+                current = it.current,
+                sourceLabel = it.sourceLabel,
+                isPlaying = it.isPlaying,
+                shuffleEnabled = it.shuffleEnabled,
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(applicationScope, SharingStarted.Eagerly, ListPlaybackState())
     val progressState: StateFlow<PlaybackProgressState> = state
         .map {
             val dur = if (it.durationMs > 0L) it.durationMs else (it.current?.durationMs ?: findKnownDuration(it.current) ?: 0L)
@@ -759,9 +797,9 @@ class MusicPlayer @Inject constructor(
         // waits a full connect timeout on broken IPv6 routes before trying IPv4.
         // Keep media off the API client's interceptors and disk HTTP cache.
         val mediaHttp = okhttp3.OkHttpClient.Builder()
-            .dns(com.lastwave.app.data.network.Ipv4FirstDnsResolver())
-            .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .dns(com.lastwave.app.data.network.Ipv4FirstDnsResolver(context = appContext))
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
@@ -1493,12 +1531,16 @@ class MusicPlayer @Inject constructor(
                 else -> dataSpec
             }
         }
+        // The standby becomes the active player after every crossfade /
+        // AutoMix / stream-upgrade swap and stays active for the following
+        // songs, so it needs the same deep buffer: the old 15-30s window ran
+        // dry on any network dip and stalled songs mid-way.
         val baseLoadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ if (handleAudioFocus) 45_000 else 15_000,
-                /* maxBufferMs = */ if (handleAudioFocus) 120_000 else 30_000,
+                /* minBufferMs = */ 45_000,
+                /* maxBufferMs = */ 120_000,
                 /* bufferForPlaybackMs = */ if (handleAudioFocus) 250 else 1_500,
-                /* bufferForPlaybackAfterRebufferMs = */ if (handleAudioFocus) 750 else 2_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_500,
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .setBackBuffer(15_000, true)
@@ -1860,6 +1902,21 @@ class MusicPlayer @Inject constructor(
                         restoredIndex,
                         restoredSession.positionMs.coerceAtLeast(0),
                     )
+                    if (restoredSession.shuffleEnabled && restoredSession.queue.size > 1) {
+                        // Resume the same shuffle instead of a fresh one that
+                        // replays songs already heard before the restart.
+                        val saved = restoredSession.shuffleOrder
+                        val order = if (saved.size == restoredSession.queue.size &&
+                            saved.sorted() == restoredSession.queue.indices.toList()
+                        ) {
+                            saved
+                        } else {
+                            listOf(restoredIndex) + restoredSession.queue.indices.filter { it != restoredIndex }.shuffled()
+                        }
+                        runCatching {
+                            restoredPlayer.setShuffleOrder(DefaultShuffleOrder(order.toIntArray(), Random.nextLong()))
+                        }
+                    }
                     restoredPlayer.shuffleModeEnabled = restoredSession.shuffleEnabled
                     restoredPlayer.repeatMode = restoredSession.repeatMode.takeIf {
                         it in Player.REPEAT_MODE_OFF..Player.REPEAT_MODE_ALL
@@ -1904,18 +1961,14 @@ class MusicPlayer @Inject constructor(
         }
         val autoMixCoord = autoMixCoordinator.get()
         autoMixCoord.onPerformDeckSwap = { outgoing, incoming ->
-            val timeline = outgoing.currentTimeline
-            if (!timeline.isEmpty && incoming.mediaItemCount > 0) {
-                val shuffleOrder = mutableListOf<Int>()
-                var index = incoming.currentMediaItemIndex
-                while (index != C.INDEX_UNSET && !shuffleOrder.contains(index) && shuffleOrder.size < incoming.mediaItemCount) {
-                    shuffleOrder.add(index)
-                    index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, outgoing.shuffleModeEnabled)
-                }
-                if (shuffleOrder.size == incoming.mediaItemCount) {
-                    runCatching {
-                        incoming.setShuffleOrder(DefaultShuffleOrder(shuffleOrder.toIntArray(), Random.nextLong()))
-                    }
+            // Carry the exact play order across. Walking only from the
+            // incoming song onward produced a partial order that failed the
+            // size check, so the new deck kept its own random shuffle and
+            // already-played songs came round again.
+            val shuffleOrder = currentPlayOrder(outgoing)
+            if (shuffleOrder.size == incoming.mediaItemCount && incoming.mediaItemCount > 0) {
+                runCatching {
+                    incoming.setShuffleOrder(DefaultShuffleOrder(shuffleOrder.toIntArray(), Random.nextLong()))
                 }
             }
             incoming.shuffleModeEnabled = outgoing.shuffleModeEnabled
@@ -2050,13 +2103,16 @@ class MusicPlayer @Inject constructor(
                                 }
                             }
 
+                            // Only the decoded stream length may time a mix:
+                            // catalog metadata can describe another edit of the
+                            // song and opened the blend halfway through it.
                             autoMixCoordinator.get().onTrackProgressTick(
                                 primaryPlayer = player,
                                 secondaryPlayer = currentStandby(),
                                 currentTrack = _state.value.current,
                                 nextTrack = nextTrk,
-                                positionMs = pos,
-                                durationMs = dur,
+                                positionMs = runCatching { player.currentPosition }.getOrDefault(pos).coerceAtLeast(0L),
+                                durationMs = player.duration.takeIf { it > 0L } ?: 0L,
                                 nextTrackStreamUrl = nextStreamUrl,
                             )
                             if (updateCrossfade(pos)) {
@@ -2279,6 +2335,10 @@ class MusicPlayer @Inject constructor(
         applicationScope.launch {
             settingsPreferences.settings.collect { settings ->
                 crossfadeEnabled = settings.crossfadeEnabled
+                if (autoplaySimilarEnabled && !settings.autoplaySimilarEnabled) {
+                    withContext(Dispatchers.Main.immediate) { disableRadioQueue() }
+                }
+                autoplaySimilarEnabled = settings.autoplaySimilarEnabled
                 crossfadeDurationMs = settings.crossfadeSeconds.coerceIn(1, 12) * 1000L
                 stopPlaybackOnTaskRemovedPref = settings.stopPlaybackOnTaskRemoved
                 val wasBitPerfect = bitPerfectEnabled
@@ -2419,7 +2479,7 @@ class MusicPlayer @Inject constructor(
         latePreloadKey = null
         lastPreloadRetryMs = 0L
         // A podcast episode never seeds a music radio.
-        val radioAllowed = startRadio && track.mediaType == MediaType.SONG
+        val radioAllowed = startRadio && autoplaySimilarEnabled && track.mediaType == MediaType.SONG
         radioQueueActive = radioAllowed
         startResolvedQueuePlayback(
             tracks = listOf(track),
@@ -2503,7 +2563,7 @@ class MusicPlayer @Inject constructor(
         pendingRestoredSession = null
         discoverQueueLoadJob?.cancel()
         discoverQueueActive = endlessDiscover
-        if (!enableRadioContinuation) {
+        if (!enableRadioContinuation || !autoplaySimilarEnabled) {
             disableRadioQueue()
         } else {
             radioQueueActive = true
@@ -2526,7 +2586,7 @@ class MusicPlayer @Inject constructor(
             selectedIndex = selectedIndex,
             startPositionMs = 0L,
             sourceLabel = sourceLabel,
-            endlessDiscover = endlessDiscover || enableRadioContinuation,
+            endlessDiscover = endlessDiscover || (enableRadioContinuation && autoplaySimilarEnabled),
             startShuffled = startShuffled,
         )
     }
@@ -3548,8 +3608,12 @@ class MusicPlayer @Inject constructor(
         // a full-length track and the hand-off abandons the rest of it. So
         // effectiveDuration returns 0 here rather than the outgoing track's
         // length, and this track simply idles until its own duration is known.
+        // Catalog metadata is NOT a fallback here: it can belong to a
+        // different edit of the song and cut it off mid-way. The resolver's
+        // duration for this exact stream is safe.
         val timingDurationMs = player.duration.takeIf { it > 0L }
-            ?: effectiveDuration(player.duration, player, _state.value.durationMs).takeIf { it > 0L }
+            ?: player.currentMediaItem?.localConfiguration?.customCacheKey
+                ?.let(preparedStreams::get)?.durationMs?.takeIf { it > 0L }
             ?: return false
         val nextIndex = player.nextMediaItemIndex
         val hasNext = nextIndex != C.INDEX_UNSET &&
@@ -4481,6 +4545,41 @@ class MusicPlayer @Inject constructor(
         val snapshot = _state.value
         if (snapshot.queue.isEmpty() || snapshot.currentIndex !in snapshot.queue.indices) return emptyList()
         return ((snapshot.currentIndex + 1) until minOf(snapshot.currentIndex + 1 + safeLimit, snapshot.queue.size)).toList()
+    }
+
+    /** The live play order: shuffle order when shuffling, list order otherwise. */
+    @MainThread
+    private fun currentPlayOrder(target: Player = player): List<Int> {
+        val timeline = target.currentTimeline
+        if (timeline.isEmpty) return emptyList()
+        val order = ArrayList<Int>(target.mediaItemCount)
+        var cursor = timeline.getFirstWindowIndex(target.shuffleModeEnabled)
+        while (cursor != C.INDEX_UNSET && order.size < target.mediaItemCount) {
+            order.add(cursor)
+            cursor = timeline.getNextWindowIndex(cursor, Player.REPEAT_MODE_OFF, target.shuffleModeEnabled)
+        }
+        return order
+    }
+
+    /**
+     * Appends auto-added songs (radio / discover) after everything already
+     * queued. With shuffle on, ExoPlayer would scatter them at random spots of
+     * the shuffle order, including before the current song, so they either
+     * never play or push unplayed queue songs behind them; here they always
+     * follow the last song still waiting to be played.
+     */
+    @MainThread
+    private fun appendToQueueEnd(items: List<MediaItem>) {
+        if (items.isEmpty()) return
+        val count = player.mediaItemCount
+        val order = if (player.shuffleModeEnabled) currentPlayOrder() else emptyList()
+        player.addMediaItems(items)
+        if (player.shuffleModeEnabled && order.size == count) {
+            val added = (count until player.mediaItemCount).toList()
+            runCatching {
+                player.setShuffleOrder(DefaultShuffleOrder((order + added).toIntArray(), Random.nextLong()))
+            }
+        }
     }
 
     /**
@@ -5718,11 +5817,9 @@ class MusicPlayer @Inject constructor(
             val fresh = tracks.filterNot { it.queueKey() in known }
             if (fresh.isNotEmpty()) {
                 val previousCount = player.mediaItemCount
-                player.addMediaItems(fresh.map(PlayableTrack::toMediaItem))
+                appendToQueueEnd(fresh.map(PlayableTrack::toMediaItem))
                 refresh(player)
-                val isPlayerStoppedAtEnd = player.playbackState == Player.STATE_ENDED &&
-                    player.currentMediaItemIndex >= previousCount - 1
-                if (isPlayerStoppedAtEnd) {
+                if (player.playbackState == Player.STATE_ENDED) {
                     val nextToPlay = previousCount.coerceIn(0, player.mediaItemCount - 1)
                     resolveAndPlayQueueItem(nextToPlay)
                 }
@@ -5965,32 +6062,27 @@ class MusicPlayer @Inject constructor(
                             (current?.title.equals(seed.title, ignoreCase = true) && current?.artist.equals(seed.artist, ignoreCase = true))
                         if (!stillCurrentSeed) return@withContext
 
-                        val currentIndex = player.currentMediaItemIndex.coerceAtLeast(0)
-                        if (player.mediaItemCount > currentIndex + 1) {
-                            player.removeMediaItems(currentIndex + 1, player.mediaItemCount)
-                        }
+                        // Radio only ever appends. Songs the user queued (a
+                        // playlist, an album) are never removed to make room:
+                        // dropping everything after the current index is what
+                        // cut an 80-song playlist down mid-playback.
                         val currentKeys = (0 until player.mediaItemCount).mapTo(mutableSetOf()) {
                             player.getMediaItemAt(it).toPlayableTrack().queueKey()
                         }
                         val validToAdd = toAdd.filter { it.queueKey() !in currentKeys }
                         if (validToAdd.isNotEmpty()) {
                             val previousCount = player.mediaItemCount
-                            player.addMediaItems(validToAdd.map(PlayableTrack::toMediaItem))
+                            appendToQueueEnd(validToAdd.map(PlayableTrack::toMediaItem))
                             refresh(player)
                             _state.update { it.copy(isEndlessQueue = true) }
                             enrichUpcomingQueue(player.currentMediaItemIndex)
 
-                            val isPlayerStoppedAtEnd = player.playbackState == Player.STATE_ENDED &&
-                                player.currentMediaItemIndex >= previousCount - 1
-                            if (isPlayerStoppedAtEnd || resumePlaybackImmediately) {
+                            if (player.playbackState == Player.STATE_ENDED || resumePlaybackImmediately) {
                                 val nextToPlay = previousCount.coerceIn(0, player.mediaItemCount - 1)
                                 android.util.Log.i("MusicPlayer", "Queue expired/started: auto-resuming endless playback at index $nextToPlay")
                                 resolveAndPlayQueueItem(nextToPlay)
                             } else {
-                                val nextIndex = player.currentMediaItemIndex + 1
-                                if (nextIndex in 0 until player.mediaItemCount) {
-                                    preloadNextTrack(nextIndex, player.getMediaItemAt(nextIndex).toPlayableTrack())
-                                }
+                                preloadNextQueueItem(player.currentMediaItemIndex)
                             }
                         }
                     }
@@ -6004,7 +6096,7 @@ class MusicPlayer @Inject constructor(
     }
 
     private fun extendRadioQueueIfNeeded(currentIndex: Int, forceIfAtEnd: Boolean = false) {
-        if (!radioQueueActive || radioQueueLoadJob?.isActive == true) return
+        if (!radioQueueActive || !autoplaySimilarEnabled || radioQueueLoadJob?.isActive == true) return
         val currentCount = player.mediaItemCount
         val remaining = currentCount - currentIndex - 1
         if (!forceIfAtEnd && (currentIndex < 0 || remaining > RADIO_QUEUE_REFILL_THRESHOLD)) return
@@ -6124,22 +6216,17 @@ class MusicPlayer @Inject constructor(
                     val validToAdd = finalToAdd.filter { it.queueKey() !in existingKeys }
                     if (validToAdd.isNotEmpty()) {
                         val previousCount = player.mediaItemCount
-                        player.addMediaItems(validToAdd.map(PlayableTrack::toMediaItem))
+                        appendToQueueEnd(validToAdd.map(PlayableTrack::toMediaItem))
                         refresh(player)
                         _state.update { it.copy(isEndlessQueue = true) }
-                        enrichUpcomingQueue(currentIndex)
+                        enrichUpcomingQueue(player.currentMediaItemIndex)
 
-                        val isPlayerStoppedAtEnd = player.playbackState == Player.STATE_ENDED &&
-                            player.currentMediaItemIndex >= previousCount - 1
-                        if (isPlayerStoppedAtEnd) {
+                        if (player.playbackState == Player.STATE_ENDED) {
                             val nextToPlay = previousCount.coerceIn(0, player.mediaItemCount - 1)
                             android.util.Log.i("MusicPlayer", "End of queue reached: auto-resuming infinite playback at index $nextToPlay")
                             resolveAndPlayQueueItem(nextToPlay)
                         } else {
-                            val nextIndex = player.currentMediaItemIndex + 1
-                            if (nextIndex in 0 until player.mediaItemCount) {
-                                preloadNextTrack(nextIndex, player.getMediaItemAt(nextIndex).toPlayableTrack())
-                            }
+                            preloadNextQueueItem(player.currentMediaItemIndex)
                         }
                     }
                 }
@@ -6256,7 +6343,7 @@ class MusicPlayer @Inject constructor(
                 }
             } else {
                 val currentTrack = player.currentMediaItem?.toPlayableTrack()
-                if (currentTrack != null && !isRepeatOne && currentTrack.mediaType == MediaType.SONG) {
+                if (autoplaySimilarEnabled && currentTrack != null && !isRepeatOne && currentTrack.mediaType == MediaType.SONG) {
                     radioQueueActive = true
                     _state.update { it.copy(isEndlessQueue = true) }
                     startRadioQueue(currentTrack, resumePlaybackImmediately = true)
@@ -9122,7 +9209,7 @@ class MusicPlayer @Inject constructor(
         }
         val restoredIndex = session.currentIndex.coerceIn(restoredQueue.indices)
         discoverQueueActive = session.isEndlessQueue && session.sourceLabel == "Discover"
-        radioQueueActive = session.isEndlessQueue && session.sourceLabel != "Discover"
+        radioQueueActive = session.isEndlessQueue && session.sourceLabel != "Discover" && autoplaySimilarEnabled
         val restoredDuration = session.durationMs.takeIf { it > 0L }
             ?: restoredQueue[restoredIndex].durationMs
             ?: findKnownDuration(restoredQueue[restoredIndex])
@@ -9191,7 +9278,11 @@ class MusicPlayer @Inject constructor(
         }
         if (sourceQueue.isEmpty()) return
         val sourceIndex = snapshot.currentIndex.coerceIn(sourceQueue.indices)
-        val startIndex = (sourceIndex - RESTORED_PREVIOUS_TRACKS).coerceAtLeast(0)
+        // A queue that fits is saved whole. Trimming played songs off the
+        // front shrank playlists after a restart, and under shuffle those
+        // "earlier" list positions are usually songs that have not played yet.
+        val startIndex = if (sourceQueue.size <= MAX_PERSISTED_QUEUE_SIZE) 0
+        else (sourceIndex - RESTORED_PREVIOUS_TRACKS).coerceAtLeast(0)
         val endIndex = minOf(sourceQueue.size, startIndex + MAX_PERSISTED_QUEUE_SIZE)
         val persistedQueue = sourceQueue.subList(startIndex, endIndex).map {
             val isLocal = it.playbackUrl?.let { url ->
@@ -9200,6 +9291,11 @@ class MusicPlayer @Inject constructor(
             if (isLocal) it else it.copy(playbackUrl = null, playbackMimeType = null)
         }
         val persistedIndex = sourceIndex - startIndex
+        val persistedShuffleOrder = if (
+            snapshot.shuffleEnabled && startIndex == 0 && endIndex == sourceQueue.size &&
+            Looper.myLooper() == Looper.getMainLooper() && playerDelegate.isInitialized() &&
+            player.shuffleModeEnabled && player.mediaItemCount == sourceQueue.size
+        ) currentPlayOrder() else emptyList()
         val signature = buildString {
             append(persistedQueue.size).append('|')
             append(persistedIndex).append('|')
@@ -9210,7 +9306,8 @@ class MusicPlayer @Inject constructor(
             append(snapshot.shuffleEnabled).append('|')
             append(snapshot.repeatMode).append('|')
             append(snapshot.speed).append('|')
-            append(snapshot.pitch)
+            append(snapshot.pitch).append('|')
+            append(persistedShuffleOrder.hashCode())
         }
         if (signature == lastPersistedSignature) return
         val currentDuration = snapshot.durationMs.takeIf { it > 0L }
@@ -9227,6 +9324,7 @@ class MusicPlayer @Inject constructor(
             speed = snapshot.speed,
             pitch = snapshot.pitch,
             durationMs = currentDuration,
+            shuffleOrder = persistedShuffleOrder,
         )
         lastPersistedSignature = signature
         val generation = ++persistenceGeneration

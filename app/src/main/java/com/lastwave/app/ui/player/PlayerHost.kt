@@ -268,6 +268,7 @@ import com.lastwave.app.playback.MusicPlayer
 import com.lastwave.app.playback.MusicPlayerState
 import com.lastwave.app.playback.PlaybackChromeState
 import com.lastwave.app.playback.formatSampleRateKHz
+import com.lastwave.app.playback.withoutProgress
 import com.lastwave.app.playback.isSpatialAudioCodec
 import com.lastwave.app.playback.qualityBadgeLabel
 import com.lastwave.app.playback.SignalPathReport
@@ -365,9 +366,9 @@ class PlayerViewModel @Inject constructor(
     val chromeState = player.chromeState
     val progressState = player.progressState
     val fullPlayerState = player.state
-        .map { it.copy(positionMs = 0L, bufferedPositionMs = 0L) }
+        .map { it.withoutProgress() }
         .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, player.state.value.copy(positionMs = 0L, bufferedPositionMs = 0L))
+        .stateIn(viewModelScope, SharingStarted.Eagerly, player.state.value.withoutProgress())
     val settings: StateFlow<com.lastwave.app.data.local.MiscSettings> = settingsPreferences.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.lastwave.app.data.local.MiscSettings())
     val activeDownloads = downloadManager.downloads
@@ -728,16 +729,23 @@ class PlayerViewModel @Inject constructor(
                 // shown as one, focus arriving late). Word-sync rows render
                 // word-by-word; rows without syllables fall back to
                 // line-by-line focus on the same clock.
+                // Credit / provider / metadata rows are dropped and speaker
+                // labels become duet roles before anything is drawn; only
+                // whole rows or leading labels go, timing is never touched.
                 val lines = if (result.isSynced && result.lines.isNotEmpty() && !result.isInstrumental) {
                     com.lastwave.app.ui.player.normalizeWordSpacing(
-                        com.lastwave.app.data.lyrics.LyricsRepository.normalizeLyricTiming(result.lines),
+                        com.lastwave.app.data.lyrics.LyricsRepository.normalizeLyricTiming(
+                            com.lastwave.app.data.lyrics.LyricsSanitizer.sanitize(result.lines),
+                        ),
                     )
-                } else result.lines
+                } else result.lines.filterNot {
+                    com.lastwave.app.data.lyrics.LyricsSanitizer.shouldSuppress(it.text)
+                }
                 _lyricsState.value = LyricsUiState.Success(
                     lines = lines,
                     isSynced = result.isSynced,
                     isWordSynced = result.isWordSynced || lines.any { it.hasSyllables },
-                    plainLyrics = result.plainLyrics,
+                    plainLyrics = com.lastwave.app.data.lyrics.LyricsSanitizer.sanitizePlain(result.plainLyrics),
                     isInstrumental = result.isInstrumental,
                     source = result.source,
                 )
