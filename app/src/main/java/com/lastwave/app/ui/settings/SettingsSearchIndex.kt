@@ -499,11 +499,11 @@ object SettingsSearchIndex {
             add(
                 SettingsEntry(
                     id = "appearance.amoled",
-                    title = "Pure Black AMOLED",
+                    title = "MIDNIGHT Mode",
                     subtitle = "Pitch black surfaces for OLED and AMOLED screens to save battery",
                     keywords = listOf(
                         "amoled", "oled", "pure black", "pitch black", "true black", "battery saver",
-                        "dark mode", "contrast"
+                        "dark mode", "contrast", "midnight"
                     ),
                     icon = Icons.Filled.Contrast,
                     iconContainer = { MaterialTheme.colorScheme.tertiaryContainer },
@@ -550,11 +550,11 @@ object SettingsSearchIndex {
             add(
                 SettingsEntry(
                     id = "appearance.md3_nav_bar",
-                    title = "Material 3 Navigation Bar",
+                    title = "Floating Dock",
                     subtitle = "Classic full-width bottom navigation bar instead of the floating dock",
                     keywords = listOf(
                         "md3", "material 3", "navigation bar", "bottom bar", "nav bar",
-                        "dock", "floating dock", "full width nav"
+                        "dock", "floating dock", "full width nav", "floating navigation bar", floating navigation"
                     ),
                     icon = Icons.Filled.Apps,
                     iconContainer = { MaterialTheme.colorScheme.tertiaryContainer },

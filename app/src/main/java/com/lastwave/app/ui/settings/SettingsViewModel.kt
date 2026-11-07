@@ -526,7 +526,7 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: ThemeMode) = launchSettingsAction("update theme mode") { themeRepository.setThemeMode(mode) }
     fun setLastWaveTheme(enabled: Boolean) = launchSettingsAction("update SoundDrop signature theme") { themeRepository.setLastWaveTheme(enabled) }
     fun setAppIcon(icon: AppIcon) = launchSettingsAction("update app icon") { themeRepository.setAppIcon(icon) }
-    fun setAmoled(enabled: Boolean) = launchSettingsAction("update AMOLED mode") { themeRepository.setAmoled(enabled) }
+    fun setAmoled(enabled: Boolean) = launchSettingsAction("update MIDNIGHT mode") { themeRepository.setAmoled(enabled) }
     fun setLiquidGlass(enabled: Boolean) = launchSettingsAction("update Liquid Glass") { themeRepository.setLiquidGlass(enabled) }
     fun setMd3NavBar(enabled: Boolean) = launchSettingsAction("update MD3 Navigation Bar") { themeRepository.setMd3NavBar(enabled) }
     fun setHideNavTabs(enabled: Boolean) = launchSettingsAction("update Hide Navigation Tabs") { themeRepository.setHideNavTabs(enabled) }

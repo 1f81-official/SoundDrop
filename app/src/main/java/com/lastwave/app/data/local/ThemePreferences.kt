@@ -37,11 +37,11 @@ data class ThemePrefs(
     val accentColor: String = "#8C21FF",
     val accentLight: String = "#9581F6",
     val accentMode: AccentMode = AccentMode.MANUAL,
-    val amoled: Boolean = false,
+    val amoled: Boolean = true,
     /** iOS-style liquid-glass materials. Enabled by default. */
     val liquidGlass: Boolean = true,
     /** Optional Material 3 full-width navigation bar instead of the default floating dock. */
-    val md3NavBar: Boolean = false,
+    val md3NavBar: Boolean = true,
     /** Whether bottom navigation tabs are completely hidden. */
     val hideNavTabs: Boolean = false,
     /** Dedicated LastWave Signature Theme inspired by the app logo icon (#C9FB00 & #012226). */
@@ -125,7 +125,7 @@ class ThemePreferences @Inject constructor(
         dataStore.edit {
             it[Keys.LASTWAVE_THEME] = enabled
             if (enabled) {
-                it[Keys.ACCENT_COLOR] = "#9581F6"
+                it[Keys.ACCENT_COLOR] = "#8C21FF"
                 it[Keys.ACCENT_LIGHT] = "#9581F6"
                 it[Keys.ACCENT_MODE] = AccentMode.MANUAL.storageValue
             }
