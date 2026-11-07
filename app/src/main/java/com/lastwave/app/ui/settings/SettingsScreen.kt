@@ -1316,7 +1316,7 @@ fun SettingsScreen(
                         item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SectionLabel(stringResource(R.string.settings_section_appearance))
-                    SettingsGroup(rowCount = 11) { index, position ->
+                    SettingsGroup(rowCount = 10) { index, position ->
                         when (index) {
                             0 -> ThemeModeSelectorCard(
                                 currentThemeMode = theme?.themeMode ?: ThemeMode.SYSTEM,
@@ -1423,18 +1423,6 @@ fun SettingsScreen(
                                 onCheckedChange = viewModel::setUseCustomFont,
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "appearance.app_font"),
-                            )
-                            10 -> SettingsToggleCard(
-                                icon = Icons.Filled.TextFields,
-                                iconContainer = MaterialTheme.colorScheme.primaryContainer,
-                                iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                title = "Use Bold Font",
-                                subtitle = "Increase font weight across headings and content throughout the app",
-                                checked = misc.useBoldFont,
-                                enabled = misc.useCustomFont,
-                                onCheckedChange = viewModel::setUseBoldFont,
-                                position = position,
-                                isHighlighted = (highlightedSettingId == "appearance.bold_font"),
                             )
                         }
                     }
@@ -2998,7 +2986,7 @@ fun SettingsScreen(
                         val isSelected = misc.losslessQuality == qualityId
                         Surface(
                             onClick = {
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick)
                                 viewModel.setLosslessQuality(qualityId)
                                 showQualityDialog = false
                             },
@@ -3149,7 +3137,7 @@ fun SettingsScreen(
                         val isSelected = misc.downloadQuality == qualityId
                         Surface(
                             onClick = {
-                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick)
                                 viewModel.setDownloadQuality(qualityId)
                                 showDownloadQualityDialog = false
                             },
@@ -5700,7 +5688,7 @@ private fun EqualizerSheet(
 
                 TextButton(
                     onClick = {
-                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick)
                         onPickPreset(EqualizerPresets.FLAT.name)
                     },
                     enabled = eq.enabled,
@@ -5805,7 +5793,7 @@ private fun EqualizerSheet(
                     Switch(
                         checked = eq.enabled,
                         onCheckedChange = { enabled ->
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            haptic.performHapticFeedback(if (enabled) androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOn else androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOff)
                             onSetEnabled(enabled)
                         },
                     )
@@ -5829,7 +5817,7 @@ private fun EqualizerSheet(
                     FilterChip(
                         selected = eq.presetName.equals(preset.name, ignoreCase = true),
                         onClick = {
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick)
                             onPickPreset(preset.name)
                         },
                         label = { Text(preset.name, style = MaterialTheme.typography.labelMedium) },
@@ -6240,7 +6228,7 @@ private fun YouTubeChannelSheet(
                                 channel.pageId == selectedPageId
                             Surface(
                                 onClick = {
-                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick)
                                     if (!isSelected) onSelect(channel)
                                 },
                                 shape = RoundedCornerShape(16.dp),
@@ -6337,7 +6325,7 @@ private fun YouTubeLibraryVisibilitySheet(
                 }
                 TextButton(
                     onClick = {
-                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick)
                         onSetAllVisible(!allShown)
                     },
                 ) {
@@ -6473,7 +6461,7 @@ private fun SyncPlaylistsSheet(
 
                 TextButton(
                     onClick = {
-                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick)
                         onSelectAll(!allSelected)
                     },
                 ) {
