@@ -551,10 +551,10 @@ object SettingsSearchIndex {
                 SettingsEntry(
                     id = "appearance.md3_nav_bar",
                     title = "Floating Dock",
-                    subtitle = "Classic full-width bottom navigation bar instead of the floating dock",
+                    subtitle = "Floating dock navigation instead of the classic full-width bottom bar",
                     keywords = listOf(
                         "md3", "material 3", "navigation bar", "bottom bar", "nav bar",
-                        "dock", "floating dock", "full width nav", "floating navigation bar", floating navigation"
+                        "dock", "floating dock", "full width nav", "floating navigation bar", "floating navigation"
                     ),
                     icon = Icons.Filled.Apps,
                     iconContainer = { MaterialTheme.colorScheme.tertiaryContainer },
