@@ -4,6 +4,7 @@ package com.lastwave.app.ui.player
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.combinedClickable
 import android.content.Context
 import android.content.Intent
@@ -19,6 +20,12 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.lastwave.app.ui.common.PredictiveBackScreen
+import com.lastwave.app.playback.haptics.MusicHapticsConfig
+import com.lastwave.app.playback.haptics.MusicHapticsEngineMode
+import com.lastwave.app.playback.haptics.MusicHapticsIntensity
+import com.lastwave.app.playback.haptics.MusicHapticsMode
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedVisibility
@@ -52,6 +59,8 @@ import kotlin.math.sin
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -129,7 +138,6 @@ import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -144,7 +152,6 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.SurroundSound
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -970,6 +977,32 @@ fun PlayerHost(
     }
     val miniGlass = LocalLiquidGlass.current && isLiquidGlassBackdropSupported()
 
+    // Player presentation (open / close): driven by sheet expansion progress (0..1).
+    // The player slides smoothly from the bottom over the content like a native
+    // sheet with spring physics (matching PixelMusic), while the page behind
+    // receives a clean dimming scrim without blur or zoom distortions.
+    val playerExpansion = remember { Animatable(if (expanded && state.current != null) 1f else 0f) }
+    val expansionTarget = if (expanded && state.current != null) 1f else 0f
+    LaunchedEffect(expansionTarget) {
+        playerExpansion.animateTo(
+            targetValue = expansionTarget,
+            animationSpec = if (expansionTarget == 1f) PlayerSheetOpenSpec else PlayerSheetCloseSpec,
+        )
+    }
+
+    val playerLayerShown by remember { derivedStateOf { playerExpansion.value > 0f } }
+    val miniPlayerAlpha by remember { derivedStateOf { (1f - playerExpansion.value * 2.2f).coerceIn(0f, 1f) } }
+    val navAlpha by remember { derivedStateOf { (1f - playerExpansion.value * 1.6f).coerceIn(0f, 1f) } }
+    // Mini player rides above the growing card for the first half of the morph.
+    val miniOnTop by remember { derivedStateOf { playerExpansion.value > 0f && playerExpansion.value < 0.5f } }
+
+    // Container-transform morph: the full player grows out of the mini player card
+    // (PixelMusic-style). Bounds are captured only while the player is at rest so
+    // the mini player's own follow-the-card translation can't feed back into them.
+    var hostOrigin by remember { mutableStateOf(Offset.Zero) }
+    var miniCardBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val morphCardColor = MaterialTheme.colorScheme.surfaceContainerHigh
+
     val bottomNavSlot = remember { mutableStateOf<@Composable () -> Unit>({}) }
     LaunchedEffect(viewModel) {
         viewModel.toastMessage.collect { msg ->
@@ -983,11 +1016,38 @@ fun PlayerHost(
         LocalBottomNavSlot provides bottomNavSlot,
         LocalLiquidGlassBackdrop provides (if (miniGlass) miniBackdrop else null),
     ) {
-        Box(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().liquidGlassSource(if (miniGlass) miniBackdrop else null)) {
-                content()
+        Box(
+            Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { hostOrigin = it.boundsInRoot().topLeft },
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val p = playerExpansion.value.coerceIn(0f, 1f)
+                        // Page behind blurs in as the player grows (API 31+; no-op below).
+                        // Skipped at rest / fully covered so it costs nothing then.
+                        renderEffect = if (p > 0.01f && p < 1f && android.os.Build.VERSION.SDK_INT >= 31) {
+                            val r = 22.dp.toPx() * p
+                            androidx.compose.ui.graphics.BlurEffect(r, r, androidx.compose.ui.graphics.TileMode.Clamp)
+                        } else {
+                            null
+                        }
+                    }
+                    .drawWithContent {
+                        drawContent()
+                        val p = playerExpansion.value.coerceIn(0f, 1f)
+                        if (p > 0f) {
+                            drawRect(Color.Black.copy(alpha = 0.45f * p))
+                        }
+                    },
+            ) {
+                Box(Modifier.fillMaxSize().liquidGlassSource(if (miniGlass) miniBackdrop else null)) {
+                    content()
+                }
             }
-            if (miniPlayerVisible) {
+            if (state.current != null && !settings.buttonNowPlayingEnabled && !hideMiniPlayer && miniPlayerAlpha > 0f) {
                 MiniPlayer(
                     state = state,
                     progressState = viewModel.progressState,
@@ -1003,7 +1063,20 @@ fun PlayerHost(
                     },
                     edgeToEdge = !hasBottomNavigation,
                     backdrop = if (miniGlass) miniBackdrop else null,
-                    modifier = Modifier.align(Alignment.BottomCenter),
+                    onCardBounds = { rootBounds ->
+                        if (playerExpansion.value == 0f) {
+                            miniCardBounds = rootBounds.translate(-hostOrigin)
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .zIndex(if (miniOnTop) 1f else 0f)
+                        .graphicsLayer {
+                            val p = playerExpansion.value.coerceIn(0f, 1f)
+                            alpha = miniPlayerAlpha
+                            // Follow the morphing card's top edge as it rises.
+                            translationY = -(miniCardBounds?.top ?: 0f) * p
+                        },
                 )
             }
 
@@ -1034,51 +1107,80 @@ fun PlayerHost(
                 )
             }
             var isPlayerDragging by remember { mutableStateOf(false) }
-            AnimatedVisibility(
-                modifier = Modifier,
-                visible = expanded && state.current != null,
-                enter = slideInVertically(
-                    animationSpec = ExpressiveMotion.spatialDefault(),
-                    initialOffsetY = { (it * 0.85f).toInt() },
-                ) + scaleIn(
-                    animationSpec = ExpressiveMotion.spatialDefault(),
-                    initialScale = 0.85f,
-                    transformOrigin = TransformOrigin(0.5f, 1f)
-                ) + fadeIn(tween(180)),
-                exit = slideOutVertically(
-                    animationSpec = ExpressiveMotion.spatialFast(),
-                    targetOffsetY = { (it * 0.85f).toInt() },
-                ) + scaleOut(
-                    animationSpec = ExpressiveMotion.spatialFast(),
-                    targetScale = 0.85f,
-                    transformOrigin = TransformOrigin(0.5f, 1f)
-                ) + fadeOut(tween(150)),
-            ) {
-                PredictiveBackScreen(
-                    enabled = expanded && state.current != null && currentTab == FullPlayerTab.NOW_PLAYING,
-                    onBack = { expanded = false },
-                ) {
-                    ExpandedPlayer(
-                        viewModel = viewModel,
-                        currentTab = currentTab,
-                        onTabChange = { currentTab = it },
-                        onRetryLyrics = viewModel::retryLyrics,
-                        onCollapse = { expanded = false },
-                        onOpenArtist = { artist ->
-                            expanded = false
-                            viewModel.openArtist(artist)
+            if (playerLayerShown && state.current != null) {
+                val sheetDensity = LocalDensity.current
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val p = playerExpansion.value.coerceIn(0f, 1f)
+                            // Start rect = mini player card; fallback (button mode / no mini)
+                            // = zero-height strip at the bottom, i.e. a reveal from below.
+                            val start = miniCardBounds
+                                ?: androidx.compose.ui.geometry.Rect(0f, size.height, size.width, size.height)
+                            val left = androidx.compose.ui.util.lerp(start.left, 0f, p)
+                            val right = androidx.compose.ui.util.lerp(start.right, size.width, p)
+                            val top = androidx.compose.ui.util.lerp(start.top, 0f, p)
+                            val bottom = androidx.compose.ui.util.lerp(start.bottom, size.height, p)
+                            val startRadius = minOf(start.height / 2f, PLAYER_SHEET_CORNER_RADIUS.toPx() + 8.dp.toPx())
+                            // Content is anchored to the card's top edge and clipped to the card.
+                            translationY = top
+                            shape = PlayerMorphShape(left, right, bottom - top, androidx.compose.ui.util.lerp(startRadius, 0f, p))
+                            clip = p < 1f
+                        }
+                        .drawBehind {
+                            // Solid card surface visible until the full player fades in.
+                            if (playerExpansion.value < 1f) drawRect(morphCardColor)
                         },
-                        onDragStatusChange = { isPlayerDragging = it },
-                    )
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val p = playerExpansion.value.coerceIn(0f, 1f)
+                                // Full player: invisible until 25% expanded, opaque at 100%,
+                                // with a 24dp upward settle (PixelMusic FullPlayerVisualState).
+                                val contentAlpha = ((p - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                                alpha = contentAlpha
+                                val settlePx = with(sheetDensity) { 24.dp.toPx() }
+                                translationY = androidx.compose.ui.util.lerp(settlePx, 0f, contentAlpha)
+                            },
+                    ) {
+                        PredictiveBackScreen(
+                            enabled = expanded && state.current != null && currentTab == FullPlayerTab.NOW_PLAYING,
+                            onBack = { expanded = false },
+                        ) {
+                            ExpandedPlayer(
+                                viewModel = viewModel,
+                                currentTab = currentTab,
+                                onTabChange = { currentTab = it },
+                                onRetryLyrics = viewModel::retryLyrics,
+                                onCollapse = { expanded = false },
+                                onOpenArtist = { artist ->
+                                    expanded = false
+                                    viewModel.openArtist(artist)
+                                },
+                                onDragStatusChange = { isPlayerDragging = it },
+                            )
+                        }
+                    }
                 }
             }
-            
-            AnimatedVisibility(
-                visible = !expanded || state.current == null,
-                enter = fadeIn(tween(150)),
-                exit = fadeOut(tween(150)),
-            ) {
-                bottomNavSlot.value()
+
+            if (state.current == null || navAlpha > 0f) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val p = if (state.current == null) 1f else navAlpha
+                            val e = if (state.current == null) 0f else playerExpansion.value.coerceIn(0f, 1f)
+                            alpha = p
+                            // Nav bar sinks off the bottom as the player card grows.
+                            translationY = e * 96.dp.toPx()
+                        },
+                ) {
+                    bottomNavSlot.value()
+                }
             }
             
             playlistTrack?.let { track ->
@@ -1223,6 +1325,8 @@ private fun MiniPlayer(
     bottomPadding: androidx.compose.ui.unit.Dp,
     edgeToEdge: Boolean,
     backdrop: Backdrop? = LocalLiquidGlassBackdrop.current,
+    /** Root bounds of the visible card (after padding), for the open/close morph. */
+    onCardBounds: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1264,6 +1368,13 @@ private fun MiniPlayer(
     }
     Box(
         modifier = positionedModifier
+            .then(
+                if (onCardBounds != null) {
+                    Modifier.onGloballyPositioned { onCardBounds(it.boundsInRoot()) }
+                } else {
+                    Modifier
+                },
+            )
             .graphicsLayer {
                 translationX = shownX
                 translationY = shownY.coerceAtLeast(0f)
@@ -2459,12 +2570,18 @@ private fun FullPlayer(
             },
             onDragEnd = {
                 isDismissDragging = false
+                var collapsing = false
                 when {
                     currentTab != FullPlayerTab.NOW_PLAYING && dismissDragY > swipeThreshold -> onTabChange(FullPlayerTab.NOW_PLAYING)
                     currentTab == FullPlayerTab.NOW_PLAYING && dismissDragY < -swipeThreshold -> onTabChange(FullPlayerTab.QUEUE)
-                    currentTab == FullPlayerTab.NOW_PLAYING && dismissDragY > swipeThreshold -> onCollapse()
+                    currentTab == FullPlayerTab.NOW_PLAYING && dismissDragY > swipeThreshold -> {
+                        collapsing = true
+                        onCollapse()
+                    }
                 }
-                dismissDragY = 0f
+                // Collapsing keeps the dragged offset: the close morph carries
+                // the player away from there instead of it springing back first.
+                if (!collapsing) dismissDragY = 0f
             },
         ) { change, amount ->
             val updatedDrag = if (currentTab != FullPlayerTab.NOW_PLAYING) {
@@ -2971,16 +3088,22 @@ private fun FullPlayer(
                         // Matched fade durations keep both layers visible
                         // throughout the crossfade so the background never
                         // flashes through between cover and canvas/lyrics.
+                        // Same language as the player open/close: the panel
+                        // rises and grows into place like a card while the
+                        // one it covers recedes, and the reverse going back.
                         val dur = 280
+                        val ease = tween<Float>(dur, easing = FastOutSlowInEasing)
                         if (targetState != FullPlayerTab.NOW_PLAYING) {
-                            (slideInVertically(tween(dur, easing = FastOutSlowInEasing)) { it / 12 } +
+                            (slideInVertically(tween(dur, easing = FastOutSlowInEasing)) { it / 8 } +
+                                scaleIn(ease, initialScale = 0.92f, transformOrigin = TransformOrigin(0.5f, 1f)) +
                                 fadeIn(tween(dur))) togetherWith
-                                (slideOutVertically(tween(dur, easing = FastOutSlowInEasing)) { -it / 12 } +
+                                (scaleOut(ease, targetScale = 0.94f, transformOrigin = TransformOrigin(0.5f, 0f)) +
                                     fadeOut(tween(dur)))
                         } else {
-                            (slideInVertically(tween(dur, easing = FastOutSlowInEasing)) { -it / 12 } +
+                            (scaleIn(ease, initialScale = 0.94f, transformOrigin = TransformOrigin(0.5f, 0f)) +
                                 fadeIn(tween(dur))) togetherWith
-                                (slideOutVertically(tween(dur, easing = FastOutSlowInEasing)) { it / 12 } +
+                                (slideOutVertically(tween(dur, easing = FastOutSlowInEasing)) { it / 8 } +
+                                    scaleOut(ease, targetScale = 0.92f, transformOrigin = TransformOrigin(0.5f, 1f)) +
                                     fadeOut(tween(dur)))
                         }
                     },
@@ -3577,7 +3700,7 @@ private fun FullPlayer(
                                         signalPath = signalPath,
                                         isTranslucent = LocalLiquidGlass.current || showFullBleed,
                                         onClick = { showSignalPath = true },
-                                        modifier = Modifier.offset(y = (-4).dp),
+                                        modifier = Modifier.offset(y = (-2).dp),
                                     )
                                     Spacer(Modifier.height(12.dp))
                                     MainControls(state, player, isTranslucent = LocalLiquidGlass.current || showFullBleed)
@@ -4179,7 +4302,7 @@ private fun FullPlayerLandscape(
                 signalPath = signalPath,
                 isTranslucent = LocalLiquidGlass.current,
                 onClick = onOpenSignalPath,
-                modifier = Modifier.offset(y = (-4).dp),
+                modifier = Modifier.offset(y = (-2).dp),
             )
             Spacer(Modifier.height(14.dp))
 
@@ -5365,20 +5488,33 @@ private fun AppleMusicQualityBadge(
     }
 
     val badgeIcon = when {
-        isMixActive || isFadeActive -> Icons.Filled.GraphicEq
-        isSpatial -> Icons.Filled.SurroundSound
-        state.isLossless -> Icons.Filled.HighQuality
-        else -> Icons.Filled.GraphicEq
+        isMixActive -> QualityGlyphs.AutoMix
+        isFadeActive -> QualityGlyphs.Crossfade
+        isSpatial -> QualityGlyphs.Spatial
+        isHiRes -> QualityGlyphs.HiResLossless
+        state.isLossless -> QualityGlyphs.Lossless
+        else -> QualityGlyphs.Standard
     }
 
+    // Translucent capsule that always contrasts with its own text, whatever
+    // the cover-tinted background is (the bare label used to vanish into art
+    // of a similar colour). The tint pushes away from the text colour: dark
+    // veil under light text, light veil under dark text, plus a hairline edge.
+    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val lightCapsule = !isTranslucent && !darkTheme
+    val capsuleColor = when {
+        isTranslucent -> Color.Black.copy(alpha = 0.30f)
+        darkTheme -> Color.Black.copy(alpha = 0.32f)
+        else -> Color.White.copy(alpha = 0.62f)
+    }
     val tintColor = when {
         // Two decks are live during a transition, so the signal path report
         // flips between them; keep a neutral tint until it settles.
         (isMixActive || isFadeActive) && isTranslucent -> Color.White.copy(alpha = 0.95f)
         isMixActive || isFadeActive -> MaterialTheme.colorScheme.onSurface
-        signalPath.bitPerfect -> Color(0xFFE6C15A)
-        signalPath.directToHal -> Color(0xFF7FD3C3)
-        signalPath.clockFallbackResampled -> Color(0xFFFFB74D)
+        signalPath.bitPerfect -> if (lightCapsule) Color(0xFF8A6A00) else Color(0xFFE6C15A)
+        signalPath.directToHal -> if (lightCapsule) Color(0xFF1B6E62) else Color(0xFF7FD3C3)
+        signalPath.clockFallbackResampled -> if (lightCapsule) Color(0xFFA35200) else Color(0xFFFFB74D)
         isTranslucent -> Color.White.copy(alpha = 0.95f)
         else -> MaterialTheme.colorScheme.onSurface
     }
@@ -5389,7 +5525,11 @@ private fun AppleMusicQualityBadge(
     ) {
         Row(
             modifier = Modifier
+                // Size animates first so the capsule itself glides when the
+                // label changes (Lossless -> AutoMix -> Hi-Res ...).
+                .animateContentSize()
                 .clip(CircleShape)
+                .background(capsuleColor)
                 .combinedClickable(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -5400,8 +5540,7 @@ private fun AppleMusicQualityBadge(
                         onClick()
                     },
                 )
-                .padding(horizontal = 8.dp, vertical = 2.dp)
-                .animateContentSize(),
+                .padding(start = 9.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -5409,9 +5548,9 @@ private fun AppleMusicQualityBadge(
                 imageVector = badgeIcon,
                 contentDescription = null,
                 tint = tintColor,
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(13.dp),
             )
-            Spacer(Modifier.width(5.dp))
+            Spacer(Modifier.width(4.dp))
             val fullText = when {
                 isMixActive || isFadeActive -> displayTitle
                 baseLabel.isNotBlank() && !baseLabel.equals(displayTitle, ignoreCase = true) && !baseLabel.equals("AUDIO", ignoreCase = true) -> "$displayTitle \u2022 $baseLabel"
@@ -5438,7 +5577,7 @@ private fun AppleMusicQualityBadge(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                 contentDescription = null,
                 tint = tintColor.copy(alpha = 0.6f),
-                modifier = Modifier.size(10.dp),
+                modifier = Modifier.size(9.dp),
             )
         }
     }
@@ -5851,6 +5990,255 @@ private fun AudioControlsSheet(
                                 text = "Open AutoEQ / Parametric EQ",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 6. Music Haptics Card - All adjustments in the Speaker Tray
+            val hapticsConfig by player.hapticsController.config.collectAsStateWithLifecycle()
+            val isUsbActive = player.isUsbExclusiveActive
+            val isHardwareAvailable = player.hapticsController.isHardwareHapticGeneratorAvailable()
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .animateContentSize(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = QualityGlyphs.MusicHaptics,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = "Music Haptics",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = if (isUsbActive && hapticsConfig.enabled) "Paused (USB DAC Exclusive active)"
+                                    else if (hapticsConfig.enabled) "${hapticsConfig.mode.label} \u2022 ${hapticsConfig.intensity.label}"
+                                    else "Physical rhythm synchronization via haptic motor",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isUsbActive && hapticsConfig.enabled) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = hapticsConfig.enabled,
+                            onCheckedChange = { enabled ->
+                                val next = hapticsConfig.copy(enabled = enabled)
+                                player.updateMusicHapticsConfig(next)
+                                if (enabled) {
+                                    player.hapticsController.triggerPreviewPulse()
+                                }
+                            },
+                        )
+                    }
+
+                    if (hapticsConfig.enabled) {
+                        if (isUsbActive) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Text(
+                                        text = "Haptics suspended while Bit-Perfect USB DAC bypass is active",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+
+                        // Mode Selection
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Focus Mode",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                MusicHapticsMode.entries.forEach { mode ->
+                                    val isSelected = hapticsConfig.mode == mode
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            player.updateMusicHapticsConfig(hapticsConfig.copy(mode = mode))
+                                        },
+                                        label = {
+                                            Text(
+                                                mode.label,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            )
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            }
+                            Text(
+                                text = hapticsConfig.mode.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        // Intensity Selection
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Intensity",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                MusicHapticsIntensity.entries.forEach { intensity ->
+                                    val isSelected = hapticsConfig.intensity == intensity
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            player.updateMusicHapticsConfig(hapticsConfig.copy(intensity = intensity))
+                                            player.hapticsController.triggerPreviewPulse(intensity)
+                                        },
+                                        label = {
+                                            Text(
+                                                intensity.label,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            )
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            }
+                            Text(
+                                text = when (hapticsConfig.intensity) {
+                                    MusicHapticsIntensity.LIGHT -> "Subtle 35% pulse for relaxed listening"
+                                    MusicHapticsIntensity.MEDIUM -> "Balanced 65% pulse tuned for standard rhythm"
+                                    MusicHapticsIntensity.STRONG -> "Full 100% kick for heavy bass drops & transients"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        // Engine Routing Selection
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Engine Routing",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                MusicHapticsEngineMode.entries.forEach { engine ->
+                                    val isSelected = hapticsConfig.engineMode == engine
+                                    val isEnabled = engine != MusicHapticsEngineMode.HARDWARE_NATIVE || isHardwareAvailable
+                                    FilterChip(
+                                        selected = isSelected,
+                                        enabled = isEnabled,
+                                        onClick = {
+                                            player.updateMusicHapticsConfig(hapticsConfig.copy(engineMode = engine))
+                                        },
+                                        label = {
+                                            Text(
+                                                when (engine) {
+                                                    MusicHapticsEngineMode.AUTO -> "Auto"
+                                                    MusicHapticsEngineMode.DSP_PRECISION -> "DSP"
+                                                    MusicHapticsEngineMode.HARDWARE_NATIVE -> "Hardware"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            )
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            }
+                            val engineDesc = when (hapticsConfig.engineMode) {
+                                MusicHapticsEngineMode.AUTO -> if (isHardwareAvailable) "Hardware HAL for Whole Song; DSP for filtered modes" else "Precision Media3 DSP engine active"
+                                MusicHapticsEngineMode.DSP_PRECISION -> "Precision Media3 transient analyzer (cross-device)"
+                                MusicHapticsEngineMode.HARDWARE_NATIVE -> if (isHardwareAvailable) "Android 12+ hardware HapticGenerator coupled to audio HAL" else "Unavailable on this device (falling back to DSP)"
+                            }
+                            Text(
+                                text = engineDesc,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        // Pause on Battery Saver
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "Pause on Battery Saver",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    "Preserves battery when Power Saver is active",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = hapticsConfig.pauseOnBatterySaver,
+                                onCheckedChange = { pause ->
+                                    player.updateMusicHapticsConfig(hapticsConfig.copy(pauseOnBatterySaver = pause))
+                                },
                             )
                         }
                     }
@@ -6345,3 +6733,46 @@ internal fun formatTime(ms: Long): String {
 /** True for files copied by the Local songs importer (app-private storage). */
 internal fun PlayableTrack.isImportedLocalFile(): Boolean =
     com.lastwave.app.data.generate.LocalAudioFormats.importedPathOrNull(playbackUrl) != null
+
+
+// -- Player open/close presentation (PixelMusic-style bottom sheet transition) ---
+
+private val PlayerSheetOpenSpec = spring<Float>(
+    dampingRatio = 0.88f,
+    stiffness = 380f,
+    visibilityThreshold = 0.001f,
+)
+private val PlayerSheetCloseSpec = spring<Float>(
+    dampingRatio = 0.92f,
+    stiffness = 320f,
+    visibilityThreshold = 0.001f,
+)
+
+/** Top corner radius of the sliding sheet in collapsed/transit state. */
+private val PLAYER_SHEET_CORNER_RADIUS = 28.dp
+
+/**
+ * Outline for the morphing player card: a rounded rect spanning [left]..[right]
+ * horizontally and 0..[height] vertically (layer is already translated to the card top).
+ */
+private data class PlayerMorphShape(
+    val left: Float,
+    val right: Float,
+    val height: Float,
+    val radius: Float,
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+        density: androidx.compose.ui.unit.Density,
+    ): Outline {
+        val rect = androidx.compose.ui.geometry.Rect(left, 0f, right, height.coerceAtLeast(0f))
+        val r = radius.coerceIn(0f, rect.minDimension / 2f)
+        return if (r <= 0.5f) {
+            Outline.Rectangle(rect)
+        } else {
+            Outline.Rounded(androidx.compose.ui.geometry.RoundRect(rect, CornerRadius(r, r)))
+        }
+    }
+}
+
