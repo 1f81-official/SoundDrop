@@ -39,7 +39,7 @@ import androidx.media.VolumeProviderCompat
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
-import com.lastwave.app.MainActivity
+import com.lastwave.app.MainShellActivity
 import com.lastwave.app.R
 import com.lastwave.app.data.local.ScrobblerPreferences
 import com.lastwave.app.data.local.ScrobblerSettings
@@ -166,6 +166,18 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
     private var originLyricsMediaId: String? = null
     private var artworkUrl: String? = null
     private var artworkBitmap: Bitmap? = null
+    /**
+     * The platform's `config_mediaMetadataBitmapMaxSize` (320dp in AOSP),
+     * resolved against this app's resources exactly as MediaSession does, so
+     * session artwork is never larger than what the framework accepts as-is.
+     */
+    private val sessionArtworkLimitPx: Int by lazy {
+        runCatching {
+            val id = resources.getIdentifier("config_mediaMetadataBitmapMaxSize", "dimen", "android")
+            if (id != 0) resources.getDimensionPixelSize(id) else 0
+        }.getOrDefault(0).takeIf { it > 0 }
+            ?: (320 * resources.displayMetrics.density).toInt()
+    }
     private var notificationSignature = ""
     private var widgetSignature = ""
     private var waveWidgetSignature = ""
@@ -1131,9 +1143,15 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
                     .putString(MediaMetadataCompat.METADATA_KEY_TITLE, track?.title.orEmpty())
                     .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, track?.artist.orEmpty())
                     .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, track?.album.orEmpty())
-                    .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artUri)
-                    .putString(MediaMetadataCompat.METADATA_KEY_ART_URI, artUri)
-                    .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, artUri)
+                    .apply {
+                        // Same artwork keys Media3 (and SimpMusic) publish: the
+                        // cover URL in the three URI keys, only when there is one.
+                        if (artUri.isNotBlank()) {
+                            putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, artUri)
+                            putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artUri)
+                            putString(MediaMetadataCompat.METADATA_KEY_ART_URI, artUri)
+                        }
+                    }
                     .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, state.durationMs)
                     .putRating(MediaMetadataCompat.METADATA_KEY_RATING, RatingCompat.newHeartRating(isLiked))
                     .putLong(OriginOsMusicCard.KEY_SUPPORT_EVENT, OriginOsMusicCard.SUPPORTED_EVENTS)
@@ -1142,16 +1160,23 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
                         OriginOsMusicCard.loopModeOf(state.shuffleEnabled, state.repeatMode).toLong(),
                     )
                     .apply {
-                        val rawArt = artworkBitmap
-                        val art = if (rawArt != null && (rawArt.width > 512 || rawArt.height > 512)) {
-                            val maxDim = maxOf(rawArt.width, rawArt.height).toFloat()
-                            val scale = 512f / maxDim
-                            Bitmap.createScaledBitmap(rawArt, (rawArt.width * scale).toInt(), (rawArt.height * scale).toInt(), true)
+                        // Media3 / SimpMusic style: one bitmap in DISPLAY_ICON and
+                        // ALBUM_ART, capped at the platform's own metadata artwork
+                        // limit so MediaSession never rescales (or recycles) it.
+                        val rawArt = artworkBitmap?.takeIf { !it.isRecycled }
+                        val limit = sessionArtworkLimitPx
+                        val art = if (rawArt != null && (rawArt.width > limit || rawArt.height > limit)) {
+                            val scale = limit.toFloat() / maxOf(rawArt.width, rawArt.height)
+                            Bitmap.createScaledBitmap(
+                                rawArt,
+                                (rawArt.width * scale).toInt().coerceAtLeast(1),
+                                (rawArt.height * scale).toInt().coerceAtLeast(1),
+                                true,
+                            )
                         } else rawArt
                         if (art != null) {
-                            putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, art)
-                            putBitmap(MediaMetadataCompat.METADATA_KEY_ART, art)
                             putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, art)
+                            putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, art)
                         }
                     }
                     .build(),
@@ -1532,7 +1557,15 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
     private fun openAppPendingIntent(): PendingIntent = PendingIntent.getActivity(
         this,
         0,
-        Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        // ColorOS opens the activity from the MediaSession's sessionActivity
+        // when the user taps the artwork in its expanded control-center
+        // player. Target the declared activity directly instead of the
+        // launcher alias, and explicitly bring the app task to the foreground.
+        Intent(this, MainShellActivity::class.java).addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP,
+        ),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 

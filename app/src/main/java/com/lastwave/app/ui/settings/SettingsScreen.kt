@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.FolderOpen
 import com.lastwave.app.ui.jam.LastWaveJamSheet
 import com.lastwave.app.ui.jam.LastWaveJamViewModel
 import androidx.compose.material3.IconButton
@@ -488,6 +489,7 @@ fun SettingsScreen(
     onBack: () -> Unit = {},
     onLoggedOut: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
+    onOpenStorage: () -> Unit = {},
     onOpenModules: () -> Unit = {},
     onOpenHomeSections: () -> Unit = {},
     onOpenExcludedSongs: () -> Unit = {},
@@ -1316,7 +1318,7 @@ fun SettingsScreen(
                         item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SectionLabel(stringResource(R.string.settings_section_appearance))
-                    SettingsGroup(rowCount = 10) { index, position ->
+                    SettingsGroup(rowCount = 11) { index, position ->
                         when (index) {
                             0 -> ThemeModeSelectorCard(
                                 currentThemeMode = theme?.themeMode ?: ThemeMode.SYSTEM,
@@ -1423,6 +1425,17 @@ fun SettingsScreen(
                                 onCheckedChange = viewModel::setUseCustomFont,
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "appearance.app_font"),
+                            )
+                            10 -> SettingsToggleCard(
+                                icon = Icons.Filled.Vibration,
+                                iconContainer = MaterialTheme.colorScheme.primaryContainer,
+                                iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                title = stringResource(R.string.settings_ui_haptics),
+                                subtitle = stringResource(R.string.settings_ui_haptics_sub),
+                                checked = theme?.uiHaptics ?: true,
+                                onCheckedChange = viewModel::setUiHaptics,
+                                position = position,
+                                isHighlighted = (highlightedSettingId == "appearance.ui_haptics"),
                             )
                         }
                     }
@@ -2195,6 +2208,23 @@ fun SettingsScreen(
                     }
 
                     SettingsTab.DATA_BACKUP -> {
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                SectionLabel(stringResource(R.string.settings_section_storage))
+                                SettingsGroup(rowCount = 1) { _, position ->
+                                    SettingsActionCard(
+                                        icon = Icons.Filled.FolderOpen,
+                                        iconContainer = MaterialTheme.colorScheme.secondaryContainer,
+                                        iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        title = stringResource(R.string.settings_storage_title),
+                                        subtitle = stringResource(R.string.settings_storage_sub),
+                                        onClick = onOpenStorage,
+                                        position = position,
+                                    )
+                                }
+                            }
+                        }
+
                         item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SectionLabel(stringResource(R.string.settings_section_backup))
@@ -3606,6 +3636,11 @@ private fun SettingsToggleCard(
     val shape = groupShape(position)
     val haptic = LocalHapticFeedback.current
     val detailViewer = LocalToggleDetailViewer.current
+    @Suppress("NAME_SHADOWING")
+    val onCheckedChange: (Boolean) -> Unit = { value ->
+        haptic.performHapticFeedback(if (value) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+        onCheckedChange(value)
+    }
 
     Card(
         shape = shape,
@@ -3698,6 +3733,11 @@ private fun SettingsToggleCard(
     val shape = groupShape(position)
     val haptic = LocalHapticFeedback.current
     val detailViewer = LocalToggleDetailViewer.current
+    @Suppress("NAME_SHADOWING")
+    val onCheckedChange: (Boolean) -> Unit = { value ->
+        haptic.performHapticFeedback(if (value) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+        onCheckedChange(value)
+    }
 
     Card(
         shape = shape,
