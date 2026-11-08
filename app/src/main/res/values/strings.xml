@@ -112,9 +112,9 @@
     <string name="app_icon_desktop">Desktop</string>
     <string name="app_icon_desktop_sub">SoundDrop Desktop Player edition</string>
     <string name="app_icon_white">Pure White</string>
-    <string name="app_icon_white_sub">White logo with black strip lines</string>
+    <string name="app_icon_white_sub">White logo with black mascot symbol</string>
     <string name="app_icon_black">Obsidian Black</string>
-    <string name="app_icon_black_sub">Black logo with white strip lines</string>
+    <string name="app_icon_black_sub">Black logo with white mascot symbol</string>
     <string name="settings_lastwave_theme">SoundDrop Signature Theme</string>
     <string name="settings_lastwave_theme_sub">Bespoke logo palette • Electric Violet &amp; Lavender Accent</string>
     <string name="settings_amoled">MIDNIGHT Mode</string>
