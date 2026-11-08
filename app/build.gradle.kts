@@ -67,12 +67,12 @@ android {
     val vivoOrigin = (project.findProperty("vivoOrigin") as? String)?.toBoolean() == true
 
     defaultConfig {
-        applicationId = if (vivoOrigin) "com.tencent.qqmusic" else "com.lastwave.app"
+        applicationId = if (vivoOrigin) "com.tencent.qqmusic" else "com.sounddrop.music"
         buildConfigField("boolean", "VIVO_ORIGIN", vivoOrigin.toString())
         minSdk = (project.findProperty("minSdk") as? String)?.toIntOrNull() ?: 29
         targetSdk = 35
-        versionCode = 30
-        versionName = "5.1.2"
+        versionCode = 3
+        versionName = "1.0.2"
 
         (project.findProperty("targetAbis") as? String)?.let { prop ->
             ndk {

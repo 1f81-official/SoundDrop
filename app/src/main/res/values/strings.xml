@@ -108,7 +108,7 @@
     <string name="settings_section_app_icon">App Icon</string>
     <string name="settings_app_icon_sub">Choose your home screen &amp; in-app logo</string>
     <string name="app_icon_default">Default</string>
-    <string name="app_icon_default_sub">Original Electric Lime &amp; Obsidian Teal</string>
+    <string name="app_icon_default_sub">Original Electric Violet &amp; Lavender Accent</string>
     <string name="app_icon_desktop">Desktop</string>
     <string name="app_icon_desktop_sub">SoundDrop Desktop Player edition</string>
     <string name="app_icon_white">Pure White</string>
@@ -116,7 +116,7 @@
     <string name="app_icon_black">Obsidian Black</string>
     <string name="app_icon_black_sub">Black logo with white strip lines</string>
     <string name="settings_lastwave_theme">SoundDrop Signature Theme</string>
-    <string name="settings_lastwave_theme_sub">Bespoke logo palette • Electric Lime &amp; Obsidian Teal</string>
+    <string name="settings_lastwave_theme_sub">Bespoke logo palette • Electric Violet &amp; Lavender Accent</string>
     <string name="settings_amoled">MIDNIGHT Mode</string>
     <string name="settings_amoled_sub">Pure black background (Dark mode only)</string>
     <string name="settings_dynamic_color">Dynamic Color</string>
@@ -187,7 +187,7 @@
     <string name="settings_keep_lyrics_screen_awake">Keep Screen Awake on Lyrics</string>
     <string name="settings_keep_lyrics_screen_awake_desc">Prevent screen from turning off while viewing lyrics</string>
     <string name="settings_stop_on_recents">Stop Playback When Swiped Away</string>
-    <string name="settings_stop_on_recents_on">Removing LastWave from Recents stops playback</string>
+    <string name="settings_stop_on_recents_on">Removing SoundDrop from Recents stops playback</string>
     <string name="settings_stop_on_recents_off">Playback continues in the background after leaving Recents</string>
     <string name="settings_download_lyrics">Download Synced Lyrics</string>
     <string name="settings_download_lyrics_on">Save .lrc companion files &amp; embed lyrics in downloads</string>
@@ -222,7 +222,7 @@
     <string name="storage_cache_last_cleared">Last cleared %1$s • %2$s freed</string>
     <string name="storage_cache_limit">Cache size limit</string>
     <string name="storage_cache_limit_summary">Maximum combined cache size: %1$s. Oldest cached items are removed as needed; downloads are excluded.</string>
-    <string name="storage_quality_note">Artwork uses smaller thumbnails on mobile data. If a high-resolution cover is already cached, LastWave reuses it without downloading it again.</string>
+    <string name="storage_quality_note">Artwork uses smaller thumbnails on mobile data. If a high-resolution cover is already cached, SoundDrop reuses it without downloading it again.</string>
     <string name="storage_clear_cache">Clear cache</string>
     <string name="storage_clear_cache_title">Clear cached artwork and audio?</string>
     <string name="storage_clear_cache_message">This removes cached artwork and streamed audio. Downloaded music will stay on your device.</string>
