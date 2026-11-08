@@ -8,7 +8,7 @@ on:
         required: true
         default: '4.2.3'
       release_name:
-        description: 'Release Title (e.g., SoundDrop 4.2.3)'
+        description: 'Release Title (e.g., LastWave 4.2.3)'
         required: true
         default: 'Update v4.2.3'
       release_notes:
@@ -69,15 +69,38 @@ jobs:
           TAG="${{ inputs.tag_name }}"
           # Universal release (Android 10+, R8 + ProGuard + shrinkResources)
           if [ -f "app/build/outputs/apk/release/app-release-signed.apk" ]; then
-            cp app/build/outputs/apk/release/app-release-signed.apk final_apk/SoundDrop-v${TAG}-universal.apk
+            cp app/build/outputs/apk/release/app-release-signed.apk final_apk/LastWave-v${TAG}-universal.apk
           else
-            cp app/build/outputs/apk/release/app-release.apk final_apk/SoundDrop-v${TAG}-universal.apk
+            cp app/build/outputs/apk/release/app-release.apk final_apk/LastWave-v${TAG}-universal.apk
           fi
           # Universal uncompressed variant (Android 10+, raw debuggable/unminified)
           if [ -f "app/build/outputs/apk/rawRelease/app-rawRelease-signed.apk" ]; then
-            cp app/build/outputs/apk/rawRelease/app-rawRelease-signed.apk final_apk/SoundDrop-v${TAG}-universal-uncompressed.apk
+            cp app/build/outputs/apk/rawRelease/app-rawRelease-signed.apk final_apk/LastWave-v${TAG}-universal-uncompressed.apk
           else
-            cp app/build/outputs/apk/rawRelease/app-rawRelease.apk final_apk/SoundDrop-v${TAG}-universal-uncompressed.apk
+            cp app/build/outputs/apk/rawRelease/app-rawRelease.apk final_apk/LastWave-v${TAG}-universal-uncompressed.apk
+          fi
+          rm -rf app/build/outputs/apk/release/*
+
+      # vivo Origin Island / music widget build: same app under a package
+      # name on vivo's allowlist (see app/build.gradle.kts, vivoOrigin).
+      - name: Build vivo Origin Island APK
+        env:
+          ADDON_CLIENT_SECRET: ${{ secrets.ADDON_CLIENT_SECRET }}
+          LASTWAVE_LYRICS_TOKEN: ${{ secrets.LASTWAVE_LYRICS_TOKEN }}
+          LASTWAVE_LYRICS_URL: ${{ secrets.LASTWAVE_LYRICS_URL }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.ALIAS || secrets.RELEASE_KEY_ALIAS || 'release_key' }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease -PvivoOrigin=true --stacktrace
+
+      - name: Stage vivo Origin Island APK
+        run: |
+          TAG="${{ inputs.tag_name }}"
+          if [ -f "app/build/outputs/apk/release/app-release-signed.apk" ]; then
+            cp app/build/outputs/apk/release/app-release-signed.apk final_apk/LastWave-v${TAG}-vivo-origin.apk
+          else
+            cp app/build/outputs/apk/release/app-release.apk final_apk/LastWave-v${TAG}-vivo-origin.apk
           fi
           rm -rf app/build/outputs/apk/release/*
 
@@ -109,9 +132,9 @@ jobs:
         run: |
           TAG="${{ inputs.tag_name }}"
           if [ -f "app/build/outputs/apk/release/app-release-signed.apk" ]; then
-            cp app/build/outputs/apk/release/app-release-signed.apk final_apk/SoundDrop-v${TAG}-android7.apk
+            cp app/build/outputs/apk/release/app-release-signed.apk final_apk/LastWave-v${TAG}-android7.apk
           else
-            cp app/build/outputs/apk/release/app-release.apk final_apk/SoundDrop-v${TAG}-android7.apk
+            cp app/build/outputs/apk/release/app-release.apk final_apk/LastWave-v${TAG}-android7.apk
           fi
           ls -lh final_apk/
 
@@ -131,7 +154,7 @@ jobs:
             echo "::error::apksigner not found under $SDKROOT — refusing to publish unverified APKs"
             exit 1
           fi
-          EXPECTED_CERT_SHA256="${EXPECTED_CERT_SHA256:-42dc12c00e5b46a02249673e75f3f22d70dc298b618dd56a0b34f0ef464a7120}"
+          EXPECTED_CERT_SHA256="${EXPECTED_CERT_SHA256:-ed79fe6f}"
           for apk in final_apk/*.apk; do
             echo "Verifying $apk ..."
             "$APKSIGNER" verify --print-certs "$apk" > /dev/null || { echo "::error::APK failed signature verification: $apk"; exit 1; }
@@ -158,15 +181,19 @@ jobs:
 
           | Package | Recommended OS | Description |
           | :--- | :--- | :--- |
-          | **`SoundDrop-v__TAG__-universal.apk`** (~22 MB) | **Android 10+ (Android 10 – 16+)** | **Standard Recommended Release.** R8-optimized with uncompressed page-aligned native libraries for instant memory mapping. |
-          | **`SoundDrop-v__TAG__-universal-uncompressed.apk`** (~89 MB) | **Android 10+ (Android 10 – 16+)** | **Raw Release.** Unminified debuggable variant with uncompressed native libraries. |
-          | **`SoundDrop-v__TAG__-android7.apk`** (~17 MB) | **Android 7.0 – 9.0 (Legacy)** | **Legacy Android 7.0+ Variant.** Built with compressed native libraries for older package managers. |
+          | **`LastWave-v__TAG__-universal.apk`** (~22 MB) | **Android 10+ (Android 10 – 16+)** | **Standard Recommended Release.** R8-optimized with uncompressed page-aligned native libraries for instant memory mapping. |
+          | **`LastWave-v__TAG__-universal-uncompressed.apk`** (~89 MB) | **Android 10+ (Android 10 – 16+)** | **Raw Release.** Unminified debuggable variant with uncompressed native libraries. |
+          | **`LastWave-v__TAG__-android7.apk`** (~17 MB) | **Android 7.0 – 9.0 (Legacy)** | **Legacy Android 7.0+ Variant.** Built with compressed native libraries for older package managers. |
+          | **`LastWave-v__TAG__-vivo-origin.apk`** (~22 MB) | **vivo phones (OriginOS)** | **vivo Origin Island & music widget build.** Separate APK so vivo's Origin Island and music widget show LastWave. |
+
+          > [!NOTE]
+          > **vivo users (`LastWave-v__TAG__-vivo-origin.apk`):** OriginOS only shows apps from vivo's own allowlist in Origin Island and the music widget, so this build uses an allowlisted package name. It installs as a **separate app** next to regular LastWave (data is not shared), it **cannot be installed alongside the real QQ Music app**, and it updates itself from this vivo APK only. If you installed an older vivo build (shown as Spotify), uninstall it first.
 
           > [!WARNING]
-          > **Notice for Android 7.0 – 9.0 Users (`SoundDrop-v__TAG__-android7.apk`):**
+          > **Notice for Android 7.0 – 9.0 Users (`LastWave-v__TAG__-android7.apk`):**
           > - Hardware GPU glassmorphism / live blur requires Android 12+ and is automatically replaced with translucent dark canvas acrylic styling on older devices.
           > - The media notification uses classic Android media controls rather than Android 13's wavy-progress player.
-          > - For any device running Android 10 or newer, please install the standard **`SoundDrop-v__TAG__-universal.apk`** for optimal performance and memory efficiency.
+          > - For any device running Android 10 or newer, please install the standard **`LastWave-v__TAG__-universal.apk`** for optimal performance and memory efficiency.
           EOF
 
           sed -i "s/__TAG__/${TAG}/g" notice.md
