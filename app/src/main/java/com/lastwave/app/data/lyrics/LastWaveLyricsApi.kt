@@ -27,7 +27,7 @@ private data class LastWaveLyricsResponse(
 )
 
 /**
- * Syllable and line-synced Apple lyrics provided by LastWave backend.
+ * Syllable and line-synced Apple lyrics provided by SoundDrop backend.
  *
  * Configured via GitHub Actions secrets / BuildConfig:
  * - `LASTWAVE_LYRICS_TOKEN`: Access token passed via `X-Lyrics-Token` header.
@@ -132,7 +132,7 @@ class LastWaveLyricsApi @Inject constructor(
                     isWordSynced = hasWordTiming,
                     plainLyrics = ttmlLines.joinToString("\n") { it.text },
                     isInstrumental = false,
-                    source = if (hasWordTiming) "LastWave (Word-Sync)" else "LastWave (Line-Sync)",
+                    source = if (hasWordTiming) "SoundDrop (Word-Sync)" else "SoundDrop (Line-Sync)",
                 )
             }
         }
@@ -155,7 +155,7 @@ class LastWaveLyricsApi @Inject constructor(
                 isWordSynced = false,
                 plainLyrics = lrcLines.joinToString("\n") { it.text },
                 isInstrumental = false,
-                source = "LastWave (Line-Sync)",
+                source = "SoundDrop (Line-Sync)",
             )
         }
 
@@ -167,7 +167,7 @@ class LastWaveLyricsApi @Inject constructor(
                 isWordSynced = false,
                 plainLyrics = content.trim(),
                 isInstrumental = false,
-                source = "LastWave (Plain)",
+                source = "SoundDrop (Plain)",
             )
         }
 
@@ -199,6 +199,6 @@ class LastWaveLyricsApi @Inject constructor(
     }
 
     companion object {
-        private const val USER_AGENT = "LastWave-Android/1.0"
+        private const val USER_AGENT = "SoundDrop-Android/1.0"
     }
 }

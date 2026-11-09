@@ -304,7 +304,7 @@ class FileExportHelper @Inject constructor(
 
     /**
      * Auto-saves a generated playlist as an M3U file to the public
-     * Download/LastWave/ folder — separate from [saveToDocuments]'s
+     * Download/SoundDrop/ folder — separate from [saveToDocuments]'s
      * app-private export copy, and visible outside the app / after
      * uninstall. Always runs off the main thread. Never throws: genuine
      * failures come back as [Result.failure] for the caller to decide
