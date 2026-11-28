@@ -88,7 +88,7 @@ object DiscordPresence {
      * lands on the native build.
      */
     const val PROJECT_URL = "https://sounddrop.framer.website"
-    const val RELEASES_URL = "https://github.com/1f81-official/SoundDrop/releases"
+    const val RELEASES_URL = "https://sounddrop.framer.website/download"
     const val DEFAULT_BUTTON_1 = "Listen On SoundDrop"
     const val DEFAULT_BUTTON_2 = "Get SoundDrop"
 
